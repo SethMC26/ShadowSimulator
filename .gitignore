@@ -104,7 +104,6 @@ $RECYCLE.BIN/
 /.vite/
 /node_modules/
 /package-lock.json
-/package.json
 
 *.firebase
 firebase.json

@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { addCardinalGrid } from './cardinalGrid.js';
+import GUI from 'lil-gui';
 
 let elevation_angle = 45;
-let azimuth_zimuth= 90;
+let azimuth_zimuth = 90;
 let wall_azimuth = 190;
 
 const scene = new THREE.Scene();
@@ -17,6 +18,10 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
+
+// OrbitControls (simple mouse control)
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 30, 0);
 
 // --- Building group (rotate the whole building as one unit) ---
 const buildingGroup = new THREE.Group();
@@ -96,10 +101,34 @@ scene.add(helper);
 const ambient = new THREE.AmbientLight(0xffffff, 0.000);
 scene.add(ambient);
 
-// OrbitControls (simple mouse control)
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 30, 0);
+// GUI Controls
+const gui = new GUI();
+const params = {
+  elevation_angle: elevation_angle,
+  azimuth_zimuth: azimuth_zimuth,
+  wall_azimuth: wall_azimuth
+};
 
+gui.add(params, 'elevation_angle', 0, 360, 1)
+  .name('Elevation Angle')
+  .onChange(value => {
+    elevation_angle = value;
+    updateSunPosition(elevation_angle, azimuth_zimuth);
+  });
+
+gui.add(params, 'azimuth_zimuth', 0, 360, 1)
+  .name('Azimuth')
+  .onChange(value => {
+    azimuth_zimuth = value;
+    updateSunPosition(elevation_angle, azimuth_zimuth);
+  });
+
+gui.add(params, 'wall_azimuth', 0, 360, 1)
+  .name('Wall Azimuth')
+  .onChange(value => {
+    wall_azimuth = value;
+    buildingGroup.rotation.y = Math.PI - THREE.MathUtils.degToRad(wall_azimuth);
+  });
 
 function animate() {
   requestAnimationFrame(animate);
