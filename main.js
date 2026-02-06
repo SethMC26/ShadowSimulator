@@ -3,9 +3,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { addCardinalGrid } from './cardinalGrid.js';
 import GUI from 'lil-gui';
 
-let elevation_angle = 45;
-let azimuth_zimuth = 90;
 let wall_azimuth = 190;
+let latitude = 42.3601;
+let longitude = -71.0589;
+let date = '2024-06-21';
+let time = '12:00';
 
 const scene = new THREE.Scene();
 
@@ -90,7 +92,6 @@ light.shadow.radius = 2;
 light.shadow.mapSize.width = 2048;
 light.shadow.mapSize.height = 2048;
 
-updateSunPosition(elevation_angle, azimuth_zimuth);
 scene.add(light.target)
 scene.add(light);
 
@@ -98,37 +99,54 @@ const helper = new THREE.DirectionalLightHelper(light, 5);
 scene.add(helper);
 
 // Small ambient for fill
-const ambient = new THREE.AmbientLight(0xffffff, 0.000);
+const ambient = new THREE.AmbientLight(0xffffff, 0.005);
 scene.add(ambient);
 
 // GUI Controls
 const gui = new GUI();
 const params = {
-  elevation_angle: elevation_angle,
-  azimuth_zimuth: azimuth_zimuth,
-  wall_azimuth: wall_azimuth
+  latitude: latitude,
+  longitude: longitude,
+  wall_azimuth: wall_azimuth,
+  date: date,
+  time: time
 };
 
-gui.add(params, 'elevation_angle', 0, 360, 1)
-  .name('Elevation Angle')
+gui.add(params, 'latitude')
+  .name('Latitude')
   .onChange(value => {
-    elevation_angle = value;
-    updateSunPosition(elevation_angle, azimuth_zimuth);
+    latitude = value;
+    fetchSolarData(latitude, longitude, date, time + ':00');
   });
 
-gui.add(params, 'azimuth_zimuth', 0, 360, 1)
-  .name('Azimuth')
+gui.add(params, 'longitude')
+  .name('Longitude')
   .onChange(value => {
-    azimuth_zimuth = value;
-    updateSunPosition(elevation_angle, azimuth_zimuth);
+    longitude = value;
+    fetchSolarData(latitude, longitude, date, time + ':00');
   });
 
 gui.add(params, 'wall_azimuth', 0, 360, 1)
-  .name('Wall Azimuth')
+  .name('Wall Azimuth (°)')
   .onChange(value => {
     wall_azimuth = value;
     buildingGroup.rotation.y = Math.PI - THREE.MathUtils.degToRad(wall_azimuth);
   });
+
+gui.add(params, 'date')
+  .name('Date (YYYY-MM-DD)')
+  .onChange(value => {
+    date = value;
+    fetchSolarData(latitude, longitude, date, time + ':00');
+  });
+
+gui.add(params, 'time')
+  .name('Time (HH:MM)')
+  .onChange(value => {
+    time = value;
+    fetchSolarData(latitude, longitude, date, time + ':00');
+  });
+
 
 function animate() {
   requestAnimationFrame(animate);
@@ -137,8 +155,55 @@ function animate() {
   helper.update();
   renderer.render(scene, camera);
 }
-
 animate();
+// Initialize with default values
+fetchSolarData(latitude, longitude, date, time + ':00');
+
+/**
+ * 
+ * @param {Number} latitude 
+ * @param {Number} longitude 
+ * @param {String} date date in YYYY-MM-DD
+ * @param {String} time hh:mm:ss
+ */
+async function fetchSolarData(latitude, longitude, date, time) {
+  
+  const url = `https://aa.usno.navy.mil/api/celnav?date=${date}&time=${time}&coords=${latitude},${longitude}`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Response status: ${response.status}`);
+    }
+
+    const result = await response.json();
+   
+    //get celestial data
+    const data = result?.properties?.data;
+    if (!data) {
+      throw new Error('No data field in response');
+    }
+    
+    //find sun data and extract sun_elevation and sun_azimuth
+    for (const item of data) {
+      if (item?.object === 'Sun') {
+        const sun_elevation = item?.almanac_data?.hc;
+        const sun_azimuth = item?.almanac_data?.zn;
+
+        if (!sun_elevation || !sun_azimuth) {
+          throw new Error('Missing sun_elevation or sun_azimuth in data');
+        }
+
+        updateSunPosition(sun_elevation, sun_azimuth)
+        break;
+      }
+    }
+    //pasrse JSON fields to get sun_elevation and sun_azimuth
+    //get 
+  } catch (error) {
+    console.error(error.message);
+  }
+}
 
 /**
  * updateSunPosition
