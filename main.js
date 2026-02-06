@@ -3,17 +3,32 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { addCardinalGrid } from './cardinalGrid.js';
 import GUI from 'lil-gui';
 
-let wall_azimuth = 190;
+//constants and variables for our model
+let wall_azimuth = 180;
 let latitude = 42.3601;
 let longitude = -71.0589;
 let date = '2024-06-21';
 let time = '12:00';
+//building default dimensions
+let buildingWidth = 24;
+let buildingHeight = 20;
+let buildingDepth = 64;
+// Window frame (will be placed on building face)
+let windowWidth = 20;
+let windowFrameHeight = 2; // fixed physical height of the window frame
+let windowDepth = 10;
+// vertical center position of the window frame (will be clamped inside the building)
+let windowY = buildingHeight / 2;
 
+
+//scene with everything in it 
 const scene = new THREE.Scene();
 
+//camera is what we see 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 60, 180);
 
+//renderer draws the scene and camera to the screen
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -29,31 +44,32 @@ controls.target.set(0, 30, 0);
 const buildingGroup = new THREE.Group();
 scene.add(buildingGroup);
 
-// Building (24 x 60 x 24)
+//building itself
 const building = new THREE.Mesh(
-  new THREE.BoxGeometry(24, 40, 64),
+  new THREE.BoxGeometry(buildingWidth, buildingHeight, buildingDepth),
   new THREE.MeshStandardMaterial({ color: 0xffaa00 })
 );
 
-building.position.y = building.geometry.parameters.height / 2;
-//rotate building based on degrees clockwise from north
+building.position.y = buildingHeight / 2;
 // NOTE: rotation is applied to the GROUP, not the mesh
 building.castShadow = true;
 building.receiveShadow = true;
 buildingGroup.add(building);
 
 const windowFrame = new THREE.Mesh(
-  new THREE.BoxGeometry(20, 5, 10),
+  new THREE.BoxGeometry(windowWidth, windowFrameHeight, windowDepth),
   new THREE.MeshStandardMaterial({ color: 0x0000ff })
 );
+// rotate to be perpendicular to building face
 windowFrame.rotation.y = -Math.PI / 2;
-
-windowFrame.position.set(12.1, 20, 0);
 windowFrame.castShadow = true;
 buildingGroup.add(windowFrame);
 
-//rotate building based on degrees clockwise from north
+// rotate building based on degrees clockwise from north
 buildingGroup.rotation.y = Math.PI - THREE.MathUtils.degToRad(wall_azimuth);
+
+// initial placement
+updateBuildingGeometry();
 
 // Ground receiving shadow
 const ground = new THREE.Mesh(
@@ -68,6 +84,7 @@ ground.castShadow = true;
 scene.add(ground);
 
 //add grid for N,E,S,W
+//this was done by copilot and is so awful i moved it to a seperate file so i would not get an aneurysm 
 addCardinalGrid(scene, renderer, {
   size: 500,
   divisions: 50,
@@ -75,10 +92,10 @@ addCardinalGrid(scene, renderer, {
   labelSize: 48
 });
 
-
+//add light to represent our sun 
 const color = 0xffffffff;
 const light = new THREE.DirectionalLight(color, 2);
-light.target.position.set(0,1,0);
+light.target.position.set(0,500,0);
 
 light.castShadow = true;
 light.shadow.camera.near = 1;
@@ -95,7 +112,7 @@ light.shadow.mapSize.height = 2048;
 scene.add(light.target)
 scene.add(light);
 
-const helper = new THREE.DirectionalLightHelper(light, 5);
+const helper = new THREE.DirectionalLightHelper(light, 10);
 scene.add(helper);
 
 // Small ambient for fill
@@ -109,7 +126,14 @@ const params = {
   longitude: longitude,
   wall_azimuth: wall_azimuth,
   date: date,
-  time: time
+  time: time,
+  buildingWidth: buildingWidth,
+  buildingHeight: buildingHeight,
+  buildingDepth: buildingDepth,
+  windowWidth: windowWidth,
+  windowY: windowY,
+  windowDepth: windowDepth,
+  
 };
 
 gui.add(params, 'latitude')
@@ -147,6 +171,54 @@ gui.add(params, 'time')
     fetchSolarData(latitude, longitude, date, time + ':00');
   });
 
+// Building dimension controls (numeric inputs in folder)
+const buildingFolder = gui.addFolder('Building');
+buildingFolder.add(params, 'buildingWidth')
+  .name('Width')
+  .onChange(value => {
+    buildingWidth = Number(value);
+    updateBuildingGeometry();
+  });
+
+buildingFolder.add(params, 'buildingHeight')
+  .name('Height')
+  .onChange(value => {
+    buildingHeight = Number(value);
+    updateBuildingGeometry();
+  });
+
+buildingFolder.add(params, 'buildingDepth')
+  .name('Depth')
+  .onChange(value => {
+    buildingDepth = Number(value);
+    updateBuildingGeometry();
+  });
+
+// Window controls (numeric inputs in folder)
+const windowFolder = gui.addFolder('Window');
+windowFolder.add(params, 'windowWidth')
+  .name('Width')
+  .onChange(value => {
+    windowWidth = Number(value);
+    updateBuildingGeometry();
+  });
+
+windowFolder.add(params, 'windowY')
+  .name('Vertical')
+  .onChange(value => {
+    windowY = Number(value);
+    updateBuildingGeometry();
+  });
+
+windowFolder.add(params, 'windowDepth')
+  .name('Depth')
+  .onChange(value => {
+    windowDepth = Number(value);
+    updateBuildingGeometry();
+  });
+
+// (no shade controls - shade removed)
+
 
 function animate() {
   requestAnimationFrame(animate);
@@ -160,7 +232,7 @@ animate();
 fetchSolarData(latitude, longitude, date, time + ':00');
 
 /**
- * 
+ * Get data from US Navial observitory API using the latitude, longitude, date, and time. Then extract the sun_elevation and sun_azimuth from the response and update the sun position in the scene.
  * @param {Number} latitude 
  * @param {Number} longitude 
  * @param {String} date date in YYYY-MM-DD
@@ -246,4 +318,25 @@ function updateSunPosition(sun_elevation, sun_azimuth) {
   // Aim the light at the scene origin
   light.target.position.set(0, 0, 0);
   light.target.updateMatrixWorld();
+}
+
+// helper to update positions/geometry when dimensions change
+//written by copilot
+function updateBuildingGeometry() {
+  // update building geometry
+  building.geometry.dispose();
+  building.geometry = new THREE.BoxGeometry(buildingWidth, buildingHeight, buildingDepth);
+  building.position.y = buildingHeight / 2;
+
+  // update window frame geometry and position (placed on east face)
+  windowFrame.geometry.dispose();
+  windowFrame.geometry = new THREE.BoxGeometry(windowWidth, windowFrameHeight, windowDepth);
+  // compute clamped vertical position so frame doesn't clip into the building
+  const halfFrameH = windowFrameHeight / 2;
+  const minY = halfFrameH;
+  const maxY = buildingHeight - halfFrameH;
+  const clampedY = Math.max(minY, Math.min(windowY, maxY));
+  // place window on the east face, centered at clampedY. position.x uses half-depth to avoid clipping
+  windowFrame.position.set(buildingWidth / 2 + windowDepth / 2 + 0.1, clampedY, 0);
+
 }
