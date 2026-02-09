@@ -19,7 +19,7 @@ let windowFrameHeight = 2; // fixed physical height of the window frame
 let windowDepth = 10;
 // vertical center position of the window frame (will be clamped inside the building)
 let windowY = buildingHeight / 2;
-
+let isRunning = true;
 
 //scene with everything in it 
 const scene = new THREE.Scene();
@@ -140,14 +140,14 @@ gui.add(params, 'latitude')
   .name('Latitude')
   .onChange(value => {
     latitude = value;
-    fetchSolarData(latitude, longitude, date, time + ':00');
+    fetchSolarData(latitude, longitude, date, time);
   });
 
 gui.add(params, 'longitude')
   .name('Longitude')
   .onChange(value => {
     longitude = value;
-    fetchSolarData(latitude, longitude, date, time + ':00');
+    fetchSolarData(latitude, longitude, date, time);
   });
 
 gui.add(params, 'wall_azimuth', 0, 360, 1)
@@ -157,19 +157,31 @@ gui.add(params, 'wall_azimuth', 0, 360, 1)
     buildingGroup.rotation.y = Math.PI - THREE.MathUtils.degToRad(wall_azimuth);
   });
 
-gui.add(params, 'date')
+const dateController = gui.add(params, 'date')
   .name('Date (YYYY-MM-DD)')
   .onChange(value => {
     date = value;
-    fetchSolarData(latitude, longitude, date, time + ':00');
+    fetchSolarData(latitude, longitude, date, time);
   });
 
-gui.add(params, 'time')
+const timeController = gui.add(params, 'time')
   .name('Time (HH:MM)')
   .onChange(value => {
     time = value;
-    fetchSolarData(latitude, longitude, date, time + ':00');
+    fetchSolarData(latitude, longitude, date, time);
   });
+
+//add toggle feature for button
+const playback = {
+  playPause() {
+    isRunning = !isRunning;
+    playPauseController.name(isRunning ? 'Pause' : 'Play');
+  }
+};
+
+const playPauseController = gui
+  .add(playback, 'playPause')
+  .name(isRunning ? 'Pause' : 'Play');
 
 // Building dimension controls (numeric inputs in folder)
 const buildingFolder = gui.addFolder('Building');
@@ -217,11 +229,53 @@ windowFolder.add(params, 'windowDepth')
     updateBuildingGeometry();
   });
 
-// (no shade controls - shade removed)
-
+// "Mutex" for fetch chain, we will chain fethces so that they execute sequentially
+let lastFetchPromise = Promise.resolve();
+//clock to only update position every 200 ms instead of every frame
+const clock = new THREE.Clock();
 
 function animate() {
   requestAnimationFrame(animate);
+  if(isRunning && clock.getElapsedTime() * 1000 > 200) { // update every 200 ms
+    clock.start(); // reset clock
+    //add 30 minutes to time string format HH::MM
+    //copilot generated logic to add 5 minutes to time string in format HH:MM
+    let [hours, minutes] = time.split(':').map(Number); //turns string of time into two numbers one hours one minutes
+
+    minutes += 30;
+    //handle minute overflows 
+    if (minutes >= 60) {
+      hours += Math.floor(minutes / 60);
+      minutes = minutes % 60;
+    }
+    //handle hour overflows
+    if (hours >= 24) {
+      hours = hours % 24;
+      // add day in YYYY-MM-DD format
+      //chatGPT magic using date object and converting it back to a string
+      //date object will also handle incrementing month and year
+      const d = new Date(date + 'T00:00:00');
+      d.setDate(d.getDate() + 1);
+      date = d.toISOString().slice(0, 10);
+      //update controller 
+      params.date = date;
+      dateController.updateDisplay();
+    }
+    //update time controler to reflect new time
+    time = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    params.time = time;
+    timeController.updateDisplay();
+    
+    //chain async requests together so they execute sequentially
+    lastFetchPromise = lastFetchPromise.then(async () => {
+      try {
+        await fetchSolarData(latitude, longitude, date, time);
+      } catch (err) {
+        console.error('fetchSolarData error:', err);
+      }
+    });
+  }
+
   controls.update();
   light.target.updateMatrixWorld();
   helper.update();
@@ -229,7 +283,7 @@ function animate() {
 }
 animate();
 // Initialize with default values
-fetchSolarData(latitude, longitude, date, time + ':00');
+fetchSolarData(latitude, longitude, date,time);
 
 /**
  * Get data from US Navial observitory API using the latitude, longitude, date, and time. Then extract the sun_elevation and sun_azimuth from the response and update the sun position in the scene.
@@ -338,5 +392,4 @@ function updateBuildingGeometry() {
   const clampedY = Math.max(minY, Math.min(windowY, maxY));
   // place window on the east face, centered at clampedY. position.x uses half-depth to avoid clipping
   windowFrame.position.set(buildingWidth / 2 + windowDepth / 2 + 0.1, clampedY, 0);
-
 }
