@@ -19,7 +19,7 @@ let windowFrameHeight = 2; // fixed physical height of the window frame
 let windowDepth = 10;
 // vertical center position of the window frame (will be clamped inside the building)
 let windowY = buildingHeight / 2;
-let isRunning = true;
+let isRunning = false;
 
 //scene with everything in it 
 const scene = new THREE.Scene();
